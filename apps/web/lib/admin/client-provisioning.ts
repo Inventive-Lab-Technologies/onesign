@@ -11,12 +11,24 @@ export const CLIENT_PLAN_CUSTOM_VALUE = "__custom__";
 
 export type ClientProvisioningMode = "catalog" | "trial" | "custom";
 
+export interface ClientProvisioningBillingInput {
+  /** Create an open invoice after activation (default true for non-trial). */
+  createInvoice?: boolean;
+  currency?: "USD" | "GBP" | "EUR" | "BDT";
+  /** Monthly amount in minor units; overrides catalog price / required for custom. */
+  monthlyAmountCents?: number | null;
+  addons?: Array<{ addonTemplateId: string; quantity?: number }>;
+  notes?: string | null;
+  dueDays?: number;
+}
+
 export interface ClientProvisioningInput {
   mode: ClientProvisioningMode;
   planTemplateId?: string | null;
   trialDays?: number | null;
   deviceLimit?: number | null;
   storageLimitBytes?: number | null;
+  billing?: ClientProvisioningBillingInput | null;
 }
 
 export interface ResolvedClientProvisioning {

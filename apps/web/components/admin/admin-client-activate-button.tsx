@@ -49,7 +49,7 @@ export function AdminClientPlanDialog({
         role="dialog"
         aria-labelledby="client-plan-dialog-title"
         aria-modal="true"
-        className="w-full max-w-md overflow-hidden rounded-2xl border border-border/80 bg-card shadow-2xl"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border/80 bg-card shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="border-b border-border/70 px-5 py-4">

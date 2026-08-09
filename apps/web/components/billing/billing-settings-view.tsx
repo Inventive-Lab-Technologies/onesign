@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Check, HardDrive, Minus, Monitor } from "lucide-react";
 import { toast } from "sonner";
+import { ManualBillingPanel } from "@/components/billing/manual-billing-panel";
 import { usePlanQuota } from "@/components/console/plan-quota-context";
 import { type PlanViewModel } from "@/components/plans/plan-data";
 import { PlanPricingSection } from "@/components/plans/plan-pricing-section";
@@ -171,6 +172,8 @@ export function BillingSettingsView({
           ) : null
         }
       />
+
+      <ManualBillingPanel />
 
       {catalog.length > 0 ? (
         <PlanPricingSection

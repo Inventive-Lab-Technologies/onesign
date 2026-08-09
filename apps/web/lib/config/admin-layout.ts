@@ -2,6 +2,7 @@ import {
   CreditCard,
   Layers,
   Monitor,
+  PackagePlus,
   ScrollText,
   Settings,
   Tv,
@@ -14,6 +15,7 @@ export function getAdminPageTitle(pathname: string): string {
   if (pathname === "/admin") return "Clients";
   if (pathname === "/admin/device-view") return "Device View";
   if (pathname === "/admin/plans") return "Plans";
+  if (pathname === "/admin/addons") return "Addons";
   if (pathname === "/admin/audit") return "Audit log";
   if (pathname === "/admin/admins") return "Admins";
   if (pathname === "/admin/staff") return "Admins";
@@ -39,6 +41,7 @@ export function getAdminPageIcon(pathname: string): LucideIcon | undefined {
   if (pathname === "/admin") return Users;
   if (pathname === "/admin/device-view") return Monitor;
   if (pathname === "/admin/plans") return CreditCard;
+  if (pathname === "/admin/addons") return PackagePlus;
   if (pathname === "/admin/audit") return ScrollText;
   if (pathname === "/admin/admins" || pathname === "/admin/staff") return Settings;
   if (pathname.startsWith("/admin/clients/")) {

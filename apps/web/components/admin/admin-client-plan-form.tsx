@@ -1,6 +1,6 @@
 "use client";
 
-import type { AdminUserDirectoryEntry, PlanTemplate } from "@signage/types";
+import type { AddonTemplate, AdminUserDirectoryEntry, PlanTemplate } from "@signage/types";
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -15,6 +15,12 @@ import {
   type ClientProvisioningMode,
 } from "@/lib/admin/client-provisioning";
 import { guessClientPlanSelection } from "@/lib/admin/client-plan-label";
+import { getAddonUnitAmount, getPlanBaseAmount, majorAmountFromMinor, parseMajorAmountToMinor } from "@/lib/billing/amounts";
+import {
+  PLAN_CURRENCIES,
+  formatPlanMinorUnits,
+  type PlanCurrency,
+} from "@/lib/plan-currency";
 import {
   DEFAULT_TRIAL_DAYS,
   formatStorageBytes,
@@ -72,6 +78,14 @@ export function AdminClientPlanForm({
   const [storageUnit, setStorageUnit] = useState<StorageUnit>("MB");
   const [loading, setLoading] = useState(false);
 
+  const [currency, setCurrency] = useState<PlanCurrency>("BDT");
+  const [amountInput, setAmountInput] = useState("");
+  const [createInvoice, setCreateInvoice] = useState(true);
+  const [billingNotes, setBillingNotes] = useState("");
+  const [catalogAddons, setCatalogAddons] = useState<AddonTemplate[]>([]);
+  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
+  const [addonsLoading, setAddonsLoading] = useState(false);
+
   const provisioningMode: ClientProvisioningMode = useMemo(() => {
     if (planSelection === CLIENT_PLAN_TRIAL_VALUE) return "trial";
     if (planSelection === CLIENT_PLAN_CUSTOM_VALUE) return "custom";
@@ -84,6 +98,7 @@ export function AdminClientPlanForm({
   );
 
   const soloPlan = useMemo(() => findSoloPlan(plans), [plans]);
+  const showBilling = provisioningMode !== "trial";
 
   useEffect(() => {
     if (!active) return;
@@ -104,6 +119,9 @@ export function AdminClientPlanForm({
       setStorageUnit("MB");
       setStorageValue(String(Math.round(storageMb)));
     }
+    setCreateInvoice(true);
+    setBillingNotes("");
+    setSelectedAddonIds([]);
   }, [active, client, plans]);
 
   useEffect(() => {
@@ -118,6 +136,8 @@ export function AdminClientPlanForm({
         setStorageUnit("MB");
         setStorageValue(String(Math.round(storageMb)));
       }
+      const catalogAmount = getPlanBaseAmount(selectedCatalogPlan, currency);
+      setAmountInput(catalogAmount != null ? majorAmountFromMinor(catalogAmount) : "");
       return;
     }
 
@@ -125,8 +145,42 @@ export function AdminClientPlanForm({
       setDeviceLimit(String(soloPlan.device_limit));
       setStorageValue(String(Math.round(soloPlan.storage_limit_bytes / (1024 * 1024))));
       setStorageUnit("MB");
+      setAmountInput("");
+      setCreateInvoice(false);
     }
-  }, [active, provisioningMode, selectedCatalogPlan, soloPlan]);
+
+    if (provisioningMode === "custom") {
+      setCreateInvoice(true);
+    }
+  }, [active, provisioningMode, selectedCatalogPlan, soloPlan, currency]);
+
+  useEffect(() => {
+    if (!active || !showBilling) return;
+    let cancelled = false;
+    setAddonsLoading(true);
+    void fetch("/api/admin/addons", { credentials: "same-origin" })
+      .then(async (response) => {
+        const payload = (await response.json().catch(() => null)) as {
+          addons?: AddonTemplate[];
+          error?: string;
+        } | null;
+        if (!response.ok) {
+          throw new Error(payload?.error ?? "Could not load addons");
+        }
+        if (!cancelled) {
+          setCatalogAddons((payload?.addons ?? []).filter((addon) => addon.is_active));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogAddons([]);
+      })
+      .finally(() => {
+        if (!cancelled) setAddonsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [active, showBilling]);
 
   const limitsPreview = useMemo(() => {
     if (provisioningMode === "catalog" && selectedCatalogPlan) {
@@ -147,13 +201,27 @@ export function AdminClientPlanForm({
     return null;
   }, [provisioningMode, selectedCatalogPlan, soloPlan, trialDays, deviceLimit, storageValue, storageUnit]);
 
+  const addonTotalMinor = useMemo(() => {
+    return selectedAddonIds.reduce((sum, id) => {
+      const addon = catalogAddons.find((row) => row.id === id);
+      if (!addon) return sum;
+      return sum + getAddonUnitAmount(addon, currency);
+    }, 0);
+  }, [selectedAddonIds, catalogAddons, currency]);
+
   const displayName = client.client_name?.trim() || client.email;
+
+  function toggleAddon(addonId: string) {
+    setSelectedAddonIds((current) =>
+      current.includes(addonId) ? current.filter((id) => id !== addonId) : [...current, addonId],
+    );
+  }
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
     setLoading(true);
     try {
-      const provisioning =
+      const provisioningBase =
         provisioningMode === "catalog"
           ? { mode: "catalog" as const, planTemplateId: planSelection }
           : provisioningMode === "trial"
@@ -167,11 +235,44 @@ export function AdminClientPlanForm({
                 storageLimitBytes: parseStorageInput(storageValue, storageUnit) ?? undefined,
               };
 
+      let billing: {
+        createInvoice: boolean;
+        currency: PlanCurrency;
+        monthlyAmountCents: number | null;
+        addons: Array<{ addonTemplateId: string; quantity: number }>;
+        notes: string | null;
+      } | null = null;
+
+      if (showBilling) {
+        const monthlyAmountCents = amountInput.trim()
+          ? parseMajorAmountToMinor(amountInput)
+          : null;
+        if (createInvoice && (monthlyAmountCents == null || monthlyAmountCents < 0)) {
+          throw new Error("Enter a monthly amount for the invoice");
+        }
+        billing = {
+          createInvoice,
+          currency,
+          monthlyAmountCents,
+          addons: selectedAddonIds.map((addonTemplateId) => ({
+            addonTemplateId,
+            quantity: 1,
+          })),
+          notes: billingNotes.trim() || null,
+        };
+      }
+
       const response = await fetch("/api/admin/provision-client", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ userId: client.id, provisioning }),
+        body: JSON.stringify({
+          userId: client.id,
+          provisioning: {
+            ...provisioningBase,
+            ...(billing ? { billing } : {}),
+          },
+        }),
       });
 
       const result = (await response.json().catch(() => null)) as {
@@ -271,6 +372,113 @@ export function AdminClientPlanForm({
                 ))}
               </div>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showBilling ? (
+        <div className="space-y-3 rounded-xl border border-border/80 bg-muted/20 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-foreground">Billing</p>
+              <p className="text-xs text-muted-foreground">
+                Set the monthly amount and optional addons. An invoice is created on activate.
+              </p>
+            </div>
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                className="rounded border-input"
+                checked={createInvoice}
+                onChange={(event) => setCreateInvoice(event.target.checked)}
+              />
+              Create invoice
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor={`client-currency-${client.id}`}>Currency</Label>
+              <select
+                id={`client-currency-${client.id}`}
+                className={SELECT_CLASS}
+                value={currency}
+                onChange={(event) => setCurrency(event.target.value as PlanCurrency)}
+              >
+                {PLAN_CURRENCIES.map((code) => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`client-amount-${client.id}`}>Monthly price</Label>
+              <Input
+                id={`client-amount-${client.id}`}
+                inputMode="decimal"
+                placeholder="0"
+                value={amountInput}
+                onChange={(event) => setAmountInput(event.target.value)}
+                required={createInvoice}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Addons</Label>
+            {addonsLoading ? (
+              <p className="text-xs text-muted-foreground">Loading addons…</p>
+            ) : catalogAddons.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No addons yet. Create Extra screen / Extra space under Admin → Addons.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {catalogAddons.map((addon) => {
+                  const checked = selectedAddonIds.includes(addon.id);
+                  const unit = getAddonUnitAmount(addon, currency);
+                  return (
+                    <li key={addon.id}>
+                      <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border/70 bg-background px-3 py-2 text-sm">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 rounded border-input"
+                          checked={checked}
+                          onChange={() => toggleAddon(addon.id)}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="font-medium text-foreground">{addon.name}</span>
+                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                            {addon.description ||
+                              (addon.kind === "extra_screen"
+                                ? `+${addon.device_delta} screen`
+                                : `+${formatStorageBytes(addon.storage_delta_bytes)}`)}
+                            {" · "}
+                            {formatPlanMinorUnits(unit, currency)}/mo
+                          </span>
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {addonTotalMinor > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Addons: {formatPlanMinorUnits(addonTotalMinor, currency)}/mo
+              </p>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor={`client-billing-notes-${client.id}`}>Invoice notes (optional)</Label>
+            <Input
+              id={`client-billing-notes-${client.id}`}
+              value={billingNotes}
+              onChange={(event) => setBillingNotes(event.target.value)}
+              placeholder="e.g. Special customer pricing"
+            />
           </div>
         </div>
       ) : null}

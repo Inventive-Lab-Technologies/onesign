@@ -123,6 +123,117 @@ export interface Profile {
   plan_kind?: "trial" | "standard" | "custom" | "free";
 }
 
+/** Billable addon kinds in the manual billing catalog. */
+export type AddonKind = "extra_screen" | "extra_storage";
+
+/** Offline / manual payment channels (bKash, Nagad, bank, etc.). */
+export type BillingPaymentMethod = "bkash" | "nagad" | "bank" | "stripe" | "cash" | "other";
+
+export type BillingInvoiceStatus =
+  | "draft"
+  | "open"
+  | "payment_submitted"
+  | "paid"
+  | "void"
+  | "canceled";
+
+export type BillingInvoiceSource =
+  | "manual_activation"
+  | "addon_change"
+  | "renewal"
+  | "custom";
+
+export type BillingInvoiceLineKind = "plan" | "addon" | "custom" | "credit";
+
+/** Catalog addon (public.addon_templates). */
+export interface AddonTemplate {
+  id: string;
+  name: string;
+  description: string;
+  kind: AddonKind;
+  device_delta: number;
+  storage_delta_bytes: number;
+  monthly_price_cents: number;
+  monthly_price_gbp_cents: number;
+  monthly_price_eur_cents: number;
+  monthly_price_bdt_paisa: number;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Per-account manual billing settings (public.account_billing). */
+export interface AccountBilling {
+  account_id: string;
+  currency: "USD" | "GBP" | "EUR" | "BDT";
+  custom_monthly_amount_cents: number | null;
+  base_device_limit: number | null;
+  base_storage_limit_bytes: number | null;
+  payment_verified_at: string | null;
+  payment_method: BillingPaymentMethod | null;
+  payment_reference: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Active or canceled addon on an account (public.account_addons). */
+export interface AccountAddon {
+  id: string;
+  account_id: string;
+  addon_template_id: string;
+  quantity: number;
+  unit_amount_cents: number;
+  currency: "USD" | "GBP" | "EUR" | "BDT";
+  status: "active" | "canceled";
+  started_at: string;
+  canceled_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Joined from addon_templates when loaded via summary APIs. */
+  addon?: AddonTemplate | null;
+}
+
+/** In-app invoice (public.billing_invoices). */
+export interface BillingInvoice {
+  id: string;
+  account_id: string;
+  invoice_number: string;
+  status: BillingInvoiceStatus;
+  currency: "USD" | "GBP" | "EUR" | "BDT";
+  subtotal_cents: number;
+  total_cents: number;
+  period_start: string | null;
+  period_end: string | null;
+  due_at: string | null;
+  paid_at: string | null;
+  source: BillingInvoiceSource;
+  notes: string | null;
+  payment_method: BillingPaymentMethod | null;
+  payment_reference: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  lines?: BillingInvoiceLine[];
+}
+
+export interface BillingInvoiceLine {
+  id: string;
+  invoice_id: string;
+  kind: BillingInvoiceLineKind;
+  description: string;
+  quantity: number;
+  unit_amount_cents: number;
+  amount_cents: number;
+  addon_template_id: string | null;
+  account_addon_id: string | null;
+  plan_template_id: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
 /** A subscription plan in the admin-managed catalog (public.plan_templates). */
 export interface PlanTemplate {
   id: string;

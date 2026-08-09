@@ -6,6 +6,7 @@ import {
   CreditCard,
   LayoutDashboard,
   Monitor,
+  PackagePlus,
   ScrollText,
   Settings,
   Shield,
@@ -28,6 +29,7 @@ const adminNavItems: NavItem[] = [
   { path: "/admin", label: "Clients", icon: Users, end: true },
   { path: "/admin/device-view", label: "Device View", icon: Monitor, end: true },
   { path: "/admin/plans", label: "Plans", icon: CreditCard, end: true },
+  { path: "/admin/addons", label: "Addons", icon: PackagePlus, end: true },
   { path: "/admin/audit", label: "Audit log", icon: ScrollText, end: true },
   { path: "/admin/admins", label: "Admins", icon: Settings, end: true },
 ];
